@@ -4,22 +4,17 @@ import Observation
 
 @Observable
 class MapViewModel {
-    // Source
     var sourceQuery = ""
     var sourceResults: [MKMapItem] = []
     var selectedSource: MKMapItem?
-    var useCurrentLocationAsSource = true
 
-    // Destination
     var destinationQuery = ""
     var destinationResults: [MKMapItem] = []
     var selectedDestination: MKMapItem?
 
-    var isSearching = false
     var route: MKRoute?
     var routeError: String?
 
-    /// Which field is currently showing results
     enum ActiveField { case source, destination }
     var activeField: ActiveField?
 
@@ -30,7 +25,6 @@ class MapViewModel {
         }
 
         activeField = field
-        isSearching = true
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
         request.region = MKCoordinateRegion(
@@ -48,21 +42,11 @@ class MapViewModel {
         } catch {
             clearResults(for: field)
         }
-        isSearching = false
     }
 
     func selectSource(_ item: MKMapItem) {
         selectedSource = item
         sourceQuery = item.name ?? "Source"
-        sourceResults = []
-        useCurrentLocationAsSource = false
-        activeField = nil
-    }
-
-    func selectCurrentLocation() {
-        useCurrentLocationAsSource = true
-        sourceQuery = ""
-        selectedSource = nil
         sourceResults = []
         activeField = nil
     }
@@ -72,14 +56,6 @@ class MapViewModel {
         destinationQuery = item.name ?? "Destination"
         destinationResults = []
         activeField = nil
-    }
-
-    /// Resolve the source coordinate: either user location or a searched place.
-    func sourceCoordinate(userLocation: CLLocation?) -> CLLocationCoordinate2D? {
-        if useCurrentLocationAsSource {
-            return userLocation?.coordinate
-        }
-        return selectedSource?.placemark.coordinate
     }
 
     func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
@@ -105,6 +81,13 @@ class MapViewModel {
         }
     }
 
+    /// Auto-route if both endpoints are selected.
+    func tryCalculateRoute() {
+        guard let src = selectedSource?.placemark.coordinate,
+              let dst = selectedDestination?.placemark.coordinate else { return }
+        Task { await calculateRoute(from: src, to: dst) }
+    }
+
     func clearRoute() {
         route = nil
         routeError = nil
@@ -114,7 +97,6 @@ class MapViewModel {
         destinationQuery = ""
         sourceResults = []
         destinationResults = []
-        useCurrentLocationAsSource = true
         activeField = nil
     }
 

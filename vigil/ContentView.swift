@@ -50,8 +50,8 @@ struct ContentView: View {
                        coordinate: destination.placemark.coordinate)
             }
 
-            // Custom source pin (only when not using current location)
-            if !mapVM.useCurrentLocationAsSource, let source = mapVM.selectedSource {
+            // Source pin
+            if let source = mapVM.selectedSource {
                 Marker(source.name ?? "Start",
                        systemImage: "figure.walk",
                        coordinate: source.placemark.coordinate)
@@ -61,8 +61,8 @@ struct ContentView: View {
         .mapControls {
             MapCompass()
             MapScaleView()
-            MapUserLocationButton()
         }
+        .mapStyle(.standard(pointsOfInterest: .including([.restaurant, .store, .hospital, .police])))
         // Search bar at top
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
