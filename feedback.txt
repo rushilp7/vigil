@@ -1,0 +1,68 @@
+Hi guys, my group (Darsh, Shreyas, me) submitted the proposal for Vigil (routefinding to avoid sketchy/high-crime areas). We thought of a lot of possible features (too many). Did you have any thoughts on which ones might be easiest/most useful to include in the app? For example, the waze for pedestrians kind-of feature would require us to store pedestrain responses in some sort of database. do you think this would be doable within such a time frame?
+
+
+proposal here: https://docs.google.com/document/d/19sbVaIPn_TuYvSoVo5CuG724QT7iIrUF1Nfo529ybNA/edit?usp=sharing
+
+Comment
+Edit
+Delete
+
+1 Answer
+Jon Melitski
+2 hours ago
+
+
+Generally, I would want you to leave with a project you're happy with. This means my recommendation is that you do what interests you, but you're right in stating that the timeframe of the project (as well as this being for a class) means that you should probably not go too far.
+
+From what I can tell, the "Waze for pedestrians" is the only real part that requires you to write your own backend code. That is, you can accomplish everything else just by utilizing others' data? I wouldn't start with that as a feature.
+
+My advice (based on my own app dev experience): build it in a way that let's you tack on exciting features in the future, but get to a minimum viable product before you start adding.
+
+This would mean:
+
+Ideas that are MOST fundamental to the app (sorted by CRUCIAL 
+→
+→ FALLING OUT OF SCOPE):
+
+Integrating a Map (effectively required)
+
+Integrating with some sort of crime data (pretty necessary)
+
+Avoidance Zones
+
+Reporting data in-app
+
+Active Trips/Dead Man's Switch
+
+Fake a Call
+
+Emergency Alert
+
+Ideas that are Easiest (sorted by EASY 
+→
+→ DIFFICULT)
+
+MapKit (displaying a map)
+
+Fake a call button
+
+Emergency Alert View (CoreMotion)
+
+Crime Data Processing on-device
+
+Implementing navigation
+
+Custom backend for reporting/serving data based on location.
+
+Could be cheap with something like a lambda/dynamodb but you're still writing backend code.
+
+Implementing navigation (weighted by crime data / reports data) cheaply
+
+navigation is expensive I think
+
+Custom backend for background location processing using APNS (probably not feasible since you don't have an Apple developer license)
+
+
+This was sort-of a vibes-based list; some things might be easier than how I make them seem, since I did very little research in putting this list together.
+
+I would start with those things that are both the easiest and also the most crucial to your app's vision. We can talk more on Tuesday, since we're going to spend a lot of time working on final projects/looking into the scope.

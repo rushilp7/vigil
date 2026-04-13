@@ -1,0 +1,22 @@
+App Name: Vigil
+Group Members: Rushil Patel, Darsh Khandelwal, Shreyas Muthusamy
+What the Idea Is:
+Vigil is a pedestrian routing and personal safety app designed for walking at night. Unlike standard navigation apps that optimize strictly for speed, Vigil optimizes for safety. It generates routes by integrating directly with the Philadelphia Crime API to detect and avoid high-crime areas, while prioritizing well-lit streets and verified open businesses. Crucially, it incorporates a "Waze for pedestrians" community layer, allowing users to submit real-time, crowdsourced reviews and objective hazard reports (e.g., broken streetlights, sketchy encounters) that dynamically update the map. It also features a passive "Dead Man's Switch" (sharing an ETA/route that alerts a friend if you deviate) and an active "Shake-to-911" emergency trigger.
+Motivation:
+Walking alone at night, especially to or from transit stops, leaves pedestrians in a vulnerable position. Current navigation tools often prioritize shortcuts that lead users through dark, potentially dangerous areas at 2:00 AM. Vigil bridges this gap by combining official Philadelphia crime data with community-driven situational awareness and quick-access emergency tools. The purpose of this app is to give users peace of mind and tangible, accessible protection without needing to actively stare at their screens while walking.
+Brief Architecture & Views Planned:
+The app will follow an MVVM architecture.
+Models: Data structures for Routes, User Data, Business Waypoints, Ephemeral Hazard Reports, and Crime Data/Heatmaps.
+ViewModels: Will handle the custom MapKit routing logic, background timer/location monitoring for passive tracking, CoreMotion sensor data processing, parsing JSON from the Crime API to adjust route weights, and managing the lifecycle of crowdsourced hazard pins.
+Views:
+Map/Home View: The main screen featuring MapKit integration, displaying the safe route, glowing pins for 24/7 "Safe Haven" businesses, user-reported hazard markers, and subtle high-crime avoidance zones. Includes a quick-tap "Report/Review" button.
+Trip Setup View: A bottom sheet to input a destination and activate the "Dead Man's Switch" (generating an ETA).
+Active Trip View: Displays route progress and includes a quick-access "Fake a Call" de-escalation button. 
+Emergency Alert View: A full-screen, high-visibility red warning screen with a 5-second cancel countdown. This view is triggered by the accelerometer before executing an emergency SMS/call to prevent false positives.
+Course Concepts Included:
+This app will heavily utilize three of the core course concepts:
+Location Data: We will use MapKit and CoreLocation for custom route generation (weighting nodes to prioritize safe streets while actively avoiding officially designated high-crime zones and user-reported hazards) and background location tracking to monitor if the user deviates from their expected path for the Dead Man's Switch.
+Motion Data: We will implement CoreMotion to read accelerometer data. We will write custom threshold logic to detect a specific, deliberate panic "shake" (rapid alternating X/Y axis spikes) to trigger the Emergency Alert View, carefully tuning it to avoid false positives from dropping the phone or jogging.
+Network Requests: We will integrate multiple APIs: the Philadelphia Open Data Crime API to fetch historical/active crime data for map weighting, and a places API (Google Places/Yelp) to fetch live data for "Open Now" businesses to populate Safe Haven waypoints. We will also use network requests to a backend service (e.g., Firebase) to fetch and post user-generated hazard reviews in real-time.
+
+
