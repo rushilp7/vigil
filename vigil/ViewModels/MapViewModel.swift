@@ -1,5 +1,6 @@
 import Foundation
 import MapKit
+import CoreLocation
 import Observation
 
 @Observable
@@ -13,6 +14,7 @@ class MapViewModel {
     var selectedDestination: MKMapItem?
 
     var route: MKRoute?
+    var allRoutes: [MKRoute] = []
     var routeError: String?
 
     enum ActiveField { case source, destination }
@@ -58,19 +60,33 @@ class MapViewModel {
         activeField = nil
     }
 
-    func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+    /// Request multiple routes and pick the safest one based on avoidance zones.
+    func calculateSafestRoute(
+        from origin: CLLocationCoordinate2D,
+        to destination: CLLocationCoordinate2D,
+        avoiding zones: [AvoidanceZone]
+    ) async {
         routeError = nil
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
         request.transportType = .walking
+        request.requestsAlternateRoutes = true
 
         let directions = MKDirections(request: request)
         do {
             let response = try await directions.calculate()
-            route = response.routes.first
+            allRoutes = response.routes
+
+            if zones.isEmpty {
+                route = response.routes.first
+            } else {
+                // Score each route by avoidance zone overlap and pick the safest
+                route = response.routes.min(by: { crimeScore($0, zones: zones) < crimeScore($1, zones: zones) })
+            }
         } catch {
             route = nil
+            allRoutes = []
             let mkError = error as NSError
             if mkError.domain == "MKErrorDomain",
                let reason = mkError.userInfo["NSLocalizedFailureReason"] as? String {
@@ -81,15 +97,54 @@ class MapViewModel {
         }
     }
 
+    /// Score a route by how much it overlaps with avoidance zones.
+    /// Lower score = safer route.
+    private func crimeScore(_ route: MKRoute, zones: [AvoidanceZone]) -> Double {
+        let polyline = route.polyline
+        let points = polyline.points()
+        let pointCount = polyline.pointCount
+        var score = 0.0
+
+        // Sample every few points for performance
+        let step = max(1, pointCount / 100)
+        for i in stride(from: 0, to: pointCount, by: step) {
+            let coord = points[i].coordinate
+            let pointLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+
+            for zone in zones {
+                let zoneLoc = CLLocation(latitude: zone.center.latitude, longitude: zone.center.longitude)
+                let distance = pointLoc.distance(from: zoneLoc)
+                if distance <= zone.radius {
+                    // Inside the zone: full penalty based on severity
+                    score += Double(zone.severity.rawValue) * 3.0
+                } else if distance <= zone.radius * 2 {
+                    // Near the zone: partial penalty
+                    score += Double(zone.severity.rawValue)
+                }
+            }
+        }
+        return score
+    }
+
+    /// Open the route in Apple Maps for turn-by-turn navigation.
+    func startNavigation() {
+        guard let source = selectedSource, let destination = selectedDestination else { return }
+        MKMapItem.openMaps(
+            with: [source, destination],
+            launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking]
+        )
+    }
+
     /// Auto-route if both endpoints are selected.
-    func tryCalculateRoute() {
+    func tryCalculateRoute(avoiding zones: [AvoidanceZone]) {
         guard let src = selectedSource?.placemark.coordinate,
               let dst = selectedDestination?.placemark.coordinate else { return }
-        Task { await calculateRoute(from: src, to: dst) }
+        Task { await calculateSafestRoute(from: src, to: dst, avoiding: zones) }
     }
 
     func clearRoute() {
         route = nil
+        allRoutes = []
         routeError = nil
         selectedSource = nil
         selectedDestination = nil

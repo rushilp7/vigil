@@ -4,6 +4,7 @@ import MapKit
 struct RouteInfoView: View {
     let route: MKRoute
     let avoidanceZones: [AvoidanceZone]
+    let onGo: () -> Void
     let onClear: () -> Void
 
     /// Check if the route passes through any avoidance zone.
@@ -39,6 +40,16 @@ struct RouteInfoView: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    onGo()
+                } label: {
+                    Text("Go")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(.blue, in: RoundedRectangle(cornerRadius: 20))
+                }
                 Button("Clear", systemImage: "xmark.circle.fill") {
                     onClear()
                 }

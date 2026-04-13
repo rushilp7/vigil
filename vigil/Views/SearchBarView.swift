@@ -3,6 +3,7 @@ import MapKit
 
 struct SearchBarView: View {
     @Environment(MapViewModel.self) var mapVM
+    @Environment(CrimeDataViewModel.self) var crimeDataVM
 
     var body: some View {
         @Bindable var mapVM = mapVM
@@ -39,7 +40,7 @@ struct SearchBarView: View {
                                     } else {
                                         mapVM.selectDestination(item)
                                     }
-                                    mapVM.tryCalculateRoute()
+                                    mapVM.tryCalculateRoute(avoiding: crimeDataVM.avoidanceZones)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.name ?? "Unknown")

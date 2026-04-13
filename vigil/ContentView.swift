@@ -114,6 +114,7 @@ struct ContentView: View {
                     RouteInfoView(
                         route: route,
                         avoidanceZones: crimeDataVM.avoidanceZones,
+                        onGo: { mapVM.startNavigation() },
                         onClear: { mapVM.clearRoute() }
                     )
                 } else if let error = mapVM.routeError {
