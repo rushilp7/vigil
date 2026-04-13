@@ -87,18 +87,29 @@ class CrimeDataViewModel {
 
     // MARK: - Avoidance Zone Clustering
 
-    /// Grid-based clustering: divide the area into ~200m cells,
+    /// Recompute zones based on the visible map span.
+    /// Smaller span (more zoomed in) = smaller grid cells = finer detail.
+    func recomputeZones(for latitudeDelta: Double) {
+        // Map the visible span to a cell size:
+        //   zoomed out (~0.05+ delta) -> large cells (~0.004, ~400m)
+        //   default    (~0.02 delta)  -> medium cells (~0.002, ~200m)
+        //   zoomed in  (~0.005 delta) -> small cells (~0.0008, ~80m)
+        let cellSize = max(0.0005, latitudeDelta / 12.0)
+
+        // Scale threshold down with cell size so small cells still produce zones
+        let threshold = max(2, Int(cellSize / 0.001 * 3))
+
+        computeAvoidanceZones(cellSize: cellSize, threshold: threshold)
+    }
+
+    /// Grid-based clustering: divide the area into cells of a given size,
     /// sum severity-weighted incidents per cell, flag cells above threshold.
-    private func computeAvoidanceZones() {
+    private func computeAvoidanceZones(cellSize: Double = 0.002, threshold: Int = 6) {
         guard !incidents.isEmpty else {
             avoidanceZones = []
             return
         }
 
-        // ~200m in degrees at Philadelphia's latitude
-        let cellSize = 0.002
-
-        // Group incidents into grid cells
         var grid: [String: (count: Int, weightedScore: Int, latSum: Double, lngSum: Double)] = [:]
 
         for incident in incidents {
@@ -114,9 +125,9 @@ class CrimeDataViewModel {
             grid[key] = cell
         }
 
-        // Convert high-density cells into avoidance zones
-        // Threshold: cells with weighted score >= 6 (e.g. 2 violent crimes or 6 thefts)
-        let threshold = 6
+        // Radius scales with cell size
+        let radius = max(40, cellSize * 55_000)
+
         avoidanceZones = grid.values.compactMap { cell in
             guard cell.weightedScore >= threshold else { return nil }
 
@@ -135,7 +146,7 @@ class CrimeDataViewModel {
 
             return AvoidanceZone(
                 center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLng),
-                radius: 150,
+                radius: radius,
                 severity: severity,
                 incidentCount: cell.count
             )

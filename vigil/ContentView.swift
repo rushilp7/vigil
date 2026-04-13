@@ -19,6 +19,7 @@ struct ContentView: View {
     )
     @State private var showFakeCall = false
     @State private var showEmergency = false
+    @State private var lastSpan: Double = 0.05
 
     var body: some View {
         Map(position: $cameraPosition) {
@@ -108,6 +109,14 @@ struct ContentView: View {
                 )
                 .padding(.horizontal)
                 .padding(.bottom, 16)
+            }
+        }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            let newSpan = context.region.span.latitudeDelta
+            // Only recompute if zoom changed meaningfully (>20% difference)
+            if abs(newSpan - lastSpan) / lastSpan > 0.2 {
+                lastSpan = newSpan
+                crimeDataVM.recomputeZones(for: newSpan)
             }
         }
         .onAppear {
