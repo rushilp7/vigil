@@ -49,6 +49,14 @@ struct ContentView: View {
                 Marker(destination.name ?? "Destination",
                        coordinate: destination.placemark.coordinate)
             }
+
+            // Custom source pin (only when not using current location)
+            if !mapVM.useCurrentLocationAsSource, let source = mapVM.selectedSource {
+                Marker(source.name ?? "Start",
+                       systemImage: "figure.walk",
+                       coordinate: source.placemark.coordinate)
+                    .tint(.blue)
+            }
         }
         .mapControls {
             MapCompass()

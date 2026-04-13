@@ -4,23 +4,35 @@ import Observation
 
 @Observable
 class MapViewModel {
-    var searchQuery = ""
-    var searchResults: [MKMapItem] = []
-    var isSearching = false
+    // Source
+    var sourceQuery = ""
+    var sourceResults: [MKMapItem] = []
+    var selectedSource: MKMapItem?
+    var useCurrentLocationAsSource = true
+
+    // Destination
+    var destinationQuery = ""
+    var destinationResults: [MKMapItem] = []
     var selectedDestination: MKMapItem?
+
+    var isSearching = false
     var route: MKRoute?
     var routeError: String?
 
-    func searchForDestination(_ query: String) async {
+    /// Which field is currently showing results
+    enum ActiveField { case source, destination }
+    var activeField: ActiveField?
+
+    func search(_ query: String, for field: ActiveField) async {
         guard !query.isEmpty else {
-            searchResults = []
+            clearResults(for: field)
             return
         }
 
+        activeField = field
         isSearching = true
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
-        // Bias results toward Philadelphia
         request.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9526, longitude: -75.1652),
             span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
@@ -29,12 +41,45 @@ class MapViewModel {
         let search = MKLocalSearch(request: request)
         do {
             let response = try await search.start()
-            searchResults = response.mapItems
+            switch field {
+            case .source: sourceResults = response.mapItems
+            case .destination: destinationResults = response.mapItems
+            }
         } catch {
-            print("Search error: \(error)")
-            searchResults = []
+            clearResults(for: field)
         }
         isSearching = false
+    }
+
+    func selectSource(_ item: MKMapItem) {
+        selectedSource = item
+        sourceQuery = item.name ?? "Source"
+        sourceResults = []
+        useCurrentLocationAsSource = false
+        activeField = nil
+    }
+
+    func selectCurrentLocation() {
+        useCurrentLocationAsSource = true
+        sourceQuery = ""
+        selectedSource = nil
+        sourceResults = []
+        activeField = nil
+    }
+
+    func selectDestination(_ item: MKMapItem) {
+        selectedDestination = item
+        destinationQuery = item.name ?? "Destination"
+        destinationResults = []
+        activeField = nil
+    }
+
+    /// Resolve the source coordinate: either user location or a searched place.
+    func sourceCoordinate(userLocation: CLLocation?) -> CLLocationCoordinate2D? {
+        if useCurrentLocationAsSource {
+            return userLocation?.coordinate
+        }
+        return selectedSource?.placemark.coordinate
     }
 
     func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
@@ -63,8 +108,20 @@ class MapViewModel {
     func clearRoute() {
         route = nil
         routeError = nil
+        selectedSource = nil
         selectedDestination = nil
-        searchQuery = ""
-        searchResults = []
+        sourceQuery = ""
+        destinationQuery = ""
+        sourceResults = []
+        destinationResults = []
+        useCurrentLocationAsSource = true
+        activeField = nil
+    }
+
+    private func clearResults(for field: ActiveField) {
+        switch field {
+        case .source: sourceResults = []
+        case .destination: destinationResults = []
+        }
     }
 }
