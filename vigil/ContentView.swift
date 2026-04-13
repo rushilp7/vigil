@@ -21,113 +21,94 @@ struct ContentView: View {
     @State private var showEmergency = false
 
     var body: some View {
-        ZStack {
-            Map(position: $cameraPosition) {
-                UserAnnotation()
+        Map(position: $cameraPosition) {
+            UserAnnotation()
 
-                // Avoidance zone overlays
-                ForEach(crimeDataVM.avoidanceZones) { zone in
-                    MapCircle(center: zone.center, radius: zone.radius)
-                        .foregroundStyle(
-                            zone.severity == .high ? Color.red.opacity(0.2) :
-                            zone.severity == .medium ? Color.orange.opacity(0.15) :
-                            Color.yellow.opacity(0.1)
-                        )
-                        .stroke(
-                            zone.severity == .high ? Color.red.opacity(0.4) :
-                            zone.severity == .medium ? Color.orange.opacity(0.3) :
-                            Color.yellow.opacity(0.2),
-                            lineWidth: 1
-                        )
-                }
-
-                // Crime incident markers
-                ForEach(crimeDataVM.incidents) { incident in
-                    Annotation("", coordinate: CLLocationCoordinate2D(
-                        latitude: incident.latitude,
-                        longitude: incident.longitude
-                    )) {
-                        Circle()
-                            .fill(incident.category.color.opacity(0.7))
-                            .frame(width: 8, height: 8)
-                    }
-                }
-
-                // Walking route
-                if let route = mapVM.route {
-                    MapPolyline(route.polyline)
-                        .stroke(.blue, lineWidth: 4)
-                }
-
-                // Destination pin
-                if let destination = mapVM.selectedDestination {
-                    Marker(destination.name ?? "Destination",
-                           coordinate: destination.placemark.coordinate)
-                }
+            ForEach(crimeDataVM.avoidanceZones) { zone in
+                MapCircle(center: zone.center, radius: zone.radius)
+                    .foregroundStyle(
+                        zone.severity == .high ? Color.red.opacity(0.2) :
+                        zone.severity == .medium ? Color.orange.opacity(0.15) :
+                        Color.yellow.opacity(0.1)
+                    )
+                    .stroke(
+                        zone.severity == .high ? Color.red.opacity(0.4) :
+                        zone.severity == .medium ? Color.orange.opacity(0.3) :
+                        Color.yellow.opacity(0.2),
+                        lineWidth: 1
+                    )
             }
 
-            // UI Overlays
-            VStack {
-                // Search bar
-                SearchBarView()
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+            if let route = mapVM.route {
+                MapPolyline(route.polyline)
+                    .stroke(.blue, lineWidth: 4)
+            }
 
+            if let destination = mapVM.selectedDestination {
+                Marker(destination.name ?? "Destination",
+                       coordinate: destination.placemark.coordinate)
+            }
+        }
+        .mapControls {
+            MapCompass()
+            MapScaleView()
+            MapUserLocationButton()
+        }
+        // Search bar at top
+        .overlay(alignment: .top) {
+            VStack(spacing: 8) {
+                SearchBarView()
                 if crimeDataVM.isLoading {
                     ProgressView("Loading crime data...")
                         .padding(8)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-
-                Spacer()
-
-                // Bottom controls
-                HStack(alignment: .bottom) {
-                    // Legend
-                    if !crimeDataVM.incidents.isEmpty {
-                        CrimeLegendView()
-                    }
-
-                    Spacer()
-
-                    // Safety action buttons
-                    VStack(spacing: 12) {
-                        Button {
-                            showFakeCall = true
-                        } label: {
-                            Image(systemName: "phone.fill")
-                                .font(.title3)
-                                .frame(width: 48, height: 48)
-                                .background(.green, in: Circle())
-                                .foregroundStyle(.white)
-                                .shadow(radius: 4)
-                        }
-
-                        Button {
-                            showEmergency = true
-                        } label: {
-                            Image(systemName: "sos")
-                                .font(.title3.bold())
-                                .frame(width: 48, height: 48)
-                                .background(.red, in: Circle())
-                                .foregroundStyle(.white)
-                                .shadow(radius: 4)
-                        }
-                    }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+        // Legend at bottom-left
+        .overlay(alignment: .bottomLeading) {
+            if !crimeDataVM.avoidanceZones.isEmpty {
+                CrimeLegendView()
+                    .padding(.leading, 8)
+                    .padding(.bottom, 80)
+            }
+        }
+        // Safety buttons at bottom-right
+        .overlay(alignment: .bottomTrailing) {
+            VStack(spacing: 12) {
+                Button { showFakeCall = true } label: {
+                    Image(systemName: "phone.fill")
+                        .font(.title3)
+                        .frame(width: 48, height: 48)
+                        .background(.green, in: Circle())
+                        .foregroundStyle(.white)
+                        .shadow(radius: 4)
                 }
-                .padding(.horizontal, 8)
-
-                // Route info panel
-                if let route = mapVM.route {
-                    RouteInfoView(
-                        route: route,
-                        avoidanceZones: crimeDataVM.avoidanceZones,
-                        onClear: { mapVM.clearRoute() }
-                    )
-                    .padding(.horizontal)
+                Button { showEmergency = true } label: {
+                    Image(systemName: "sos")
+                        .font(.title3.bold())
+                        .frame(width: 48, height: 48)
+                        .background(.red, in: Circle())
+                        .foregroundStyle(.white)
+                        .shadow(radius: 4)
                 }
             }
-            .padding(.bottom, 16)
+            .padding(.trailing, 8)
+            .padding(.bottom, 80)
+        }
+        // Route info at bottom
+        .overlay(alignment: .bottom) {
+            if let route = mapVM.route {
+                RouteInfoView(
+                    route: route,
+                    avoidanceZones: crimeDataVM.avoidanceZones,
+                    onClear: { mapVM.clearRoute() }
+                )
+                .padding(.horizontal)
+                .padding(.bottom, 16)
+            }
         }
         .onAppear {
             locationManager.requestPermission()
