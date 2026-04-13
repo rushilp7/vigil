@@ -1,17 +1,17 @@
-//
-//  vigilApp.swift
-//  vigil
-//
-//  Created by Rushil Patel on 4/12/26.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct vigilApp: App {
+    @State private var locationManager = LocationManager()
+    @State private var crimeDataVM = CrimeDataViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(locationManager)
+                .environment(crimeDataVM)
         }
+        .modelContainer(for: CrimeIncident.self)
     }
 }
