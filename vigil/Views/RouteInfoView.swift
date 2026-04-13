@@ -3,19 +3,19 @@ import MapKit
 
 struct RouteInfoView: View {
     let route: MKRoute
+    let alternateCount: Int
     let avoidanceZones: [AvoidanceZone]
     let onGo: () -> Void
+    let onSteps: () -> Void
     let onClear: () -> Void
 
-    /// Check if the route passes through any avoidance zone.
     private var routeWarnings: [AvoidanceZone] {
         avoidanceZones.filter { zone in
             let zoneLocation = CLLocation(latitude: zone.center.latitude, longitude: zone.center.longitude)
-            // Check if any polyline point is within the zone radius
             let polyline = route.polyline
-            let pointCount = polyline.pointCount
             let points = polyline.points()
-            for i in 0..<pointCount {
+            let step = max(1, polyline.pointCount / 50)
+            for i in stride(from: 0, to: polyline.pointCount, by: step) {
                 let coord = points[i].coordinate
                 let pointLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                 if pointLocation.distance(from: zoneLocation) <= zone.radius {
@@ -30,8 +30,18 @@ struct RouteInfoView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Walking Route")
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Text("Safest Route")
+                            .font(.headline)
+                        if alternateCount > 0 {
+                            Text("of \(alternateCount + 1)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.quaternary, in: Capsule())
+                        }
+                    }
                     HStack(spacing: 12) {
                         Label(formattedDistance, systemImage: "figure.walk")
                         Label(formattedTime, systemImage: "clock")
@@ -40,9 +50,7 @@ struct RouteInfoView: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    onGo()
-                } label: {
+                Button { onGo() } label: {
                     Text("Go")
                         .font(.subheadline.bold())
                         .foregroundStyle(.white)
@@ -50,24 +58,30 @@ struct RouteInfoView: View {
                         .padding(.vertical, 8)
                         .background(.blue, in: RoundedRectangle(cornerRadius: 20))
                 }
-                Button("Clear", systemImage: "xmark.circle.fill") {
-                    onClear()
-                }
-                .labelStyle(.iconOnly)
-                .font(.title2)
-                .foregroundStyle(.secondary)
+                Button("Clear", systemImage: "xmark.circle.fill") { onClear() }
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
             }
 
-            if !routeWarnings.isEmpty {
-                let highSeverity = routeWarnings.contains { $0.severity == .high }
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(highSeverity ? .red : .orange)
-                    Text(highSeverity
-                        ? "Route passes through a high-crime area"
-                        : "Route passes through an elevated-crime area")
+            // Warning + steps row
+            HStack {
+                if !routeWarnings.isEmpty {
+                    let highSeverity = routeWarnings.contains { $0.severity == .high }
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(highSeverity ? .red : .orange)
+                        Text(highSeverity
+                            ? "Passes through high-crime area"
+                            : "Passes through elevated-crime area")
+                            .font(.caption)
+                            .foregroundStyle(highSeverity ? .red : .orange)
+                    }
+                }
+                Spacer()
+                Button { onSteps() } label: {
+                    Label("Steps", systemImage: "list.bullet")
                         .font(.caption)
-                        .foregroundStyle(highSeverity ? .red : .orange)
                 }
             }
         }

@@ -17,6 +17,11 @@ class MapViewModel {
     var allRoutes: [MKRoute] = []
     var routeError: String?
 
+    /// Routes that were considered but rejected (shown as gray dashed lines).
+    var alternateRoutes: [MKRoute] {
+        allRoutes.filter { $0 !== route }
+    }
+
     enum ActiveField { case source, destination }
     var activeField: ActiveField?
 

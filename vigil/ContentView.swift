@@ -20,11 +20,13 @@ struct ContentView: View {
     @State private var showFakeCall = false
     @State private var showEmergency = false
     @State private var lastSpan: Double = 0.05
+    @State private var showRouteSteps = false
 
     var body: some View {
         Map(position: $cameraPosition) {
             UserAnnotation()
 
+            // Avoidance zones
             ForEach(crimeDataVM.avoidanceZones) { zone in
                 MapCircle(center: zone.center, radius: zone.radius)
                     .foregroundStyle(
@@ -40,9 +42,16 @@ struct ContentView: View {
                     )
             }
 
+            // Rejected alternate routes (gray, dashed)
+            ForEach(Array(mapVM.alternateRoutes.enumerated()), id: \.offset) { _, altRoute in
+                MapPolyline(altRoute.polyline)
+                    .stroke(.gray.opacity(0.4), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
+            }
+
+            // Selected safest route (blue, solid)
             if let route = mapVM.route {
                 MapPolyline(route.polyline)
-                    .stroke(.blue, lineWidth: 4)
+                    .stroke(.blue, lineWidth: 5)
             }
 
             if let destination = mapVM.selectedDestination {
@@ -50,7 +59,6 @@ struct ContentView: View {
                        coordinate: destination.placemark.coordinate)
             }
 
-            // Source pin
             if let source = mapVM.selectedSource {
                 Marker(source.name ?? "Start",
                        systemImage: "figure.walk",
@@ -63,6 +71,12 @@ struct ContentView: View {
             MapScaleView()
         }
         .mapStyle(.standard(pointsOfInterest: .including([.restaurant, .store, .hospital, .police])))
+        .onTapGesture {
+            // Dismiss search results when tapping the map
+            mapVM.activeField = nil
+            mapVM.sourceResults = []
+            mapVM.destinationResults = []
+        }
         // Search bar at top
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
@@ -78,8 +92,9 @@ struct ContentView: View {
         }
         // Legend at bottom-left
         .overlay(alignment: .bottomLeading) {
-            if !crimeDataVM.avoidanceZones.isEmpty {
-                CrimeLegendView()
+            if !crimeDataVM.avoidanceZones.isEmpty && mapVM.route == nil {
+                CrimeLegendView(zoneCount: crimeDataVM.avoidanceZones.count,
+                                incidentCount: crimeDataVM.incidents.count)
                     .padding(.leading, 8)
                     .padding(.bottom, 80)
             }
@@ -105,16 +120,19 @@ struct ContentView: View {
                 }
             }
             .padding(.trailing, 8)
-            .padding(.bottom, 80)
+            .padding(.bottom, mapVM.route != nil ? 140 : 80)
+            .animation(.easeInOut(duration: 0.2), value: mapVM.route != nil)
         }
         // Route info / error at bottom
         .overlay(alignment: .bottom) {
-            VStack {
+            VStack(spacing: 0) {
                 if let route = mapVM.route {
                     RouteInfoView(
                         route: route,
+                        alternateCount: mapVM.alternateRoutes.count,
                         avoidanceZones: crimeDataVM.avoidanceZones,
                         onGo: { mapVM.startNavigation() },
+                        onSteps: { showRouteSteps = true },
                         onClear: { mapVM.clearRoute() }
                     )
                 } else if let error = mapVM.routeError {
@@ -139,7 +157,6 @@ struct ContentView: View {
         }
         .onMapCameraChange(frequency: .onEnd) { context in
             let newSpan = context.region.span.latitudeDelta
-            // Only recompute if zoom changed meaningfully (>20% difference)
             if abs(newSpan - lastSpan) / lastSpan > 0.2 {
                 lastSpan = newSpan
                 crimeDataVM.recomputeZones(for: newSpan)
@@ -167,6 +184,11 @@ struct ContentView: View {
         }
         .fullScreenCover(isPresented: $showEmergency) {
             EmergencyAlertView(onCancel: { showEmergency = false })
+        }
+        .sheet(isPresented: $showRouteSteps) {
+            if let route = mapVM.route {
+                RouteStepsView(route: route)
+            }
         }
         .alert("Error", isPresented: .init(
             get: { crimeDataVM.errorMessage != nil },
