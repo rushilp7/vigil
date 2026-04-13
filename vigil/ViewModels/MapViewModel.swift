@@ -9,6 +9,7 @@ class MapViewModel {
     var isSearching = false
     var selectedDestination: MKMapItem?
     var route: MKRoute?
+    var routeError: String?
 
     func searchForDestination(_ query: String) async {
         guard !query.isEmpty else {
@@ -37,6 +38,7 @@ class MapViewModel {
     }
 
     func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+        routeError = nil
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
@@ -47,13 +49,20 @@ class MapViewModel {
             let response = try await directions.calculate()
             route = response.routes.first
         } catch {
-            print("Route error: \(error)")
             route = nil
+            let mkError = error as NSError
+            if mkError.domain == "MKErrorDomain",
+               let reason = mkError.userInfo["NSLocalizedFailureReason"] as? String {
+                routeError = reason
+            } else {
+                routeError = "Could not calculate walking route."
+            }
         }
     }
 
     func clearRoute() {
         route = nil
+        routeError = nil
         selectedDestination = nil
         searchQuery = ""
         searchResults = []

@@ -99,17 +99,34 @@ struct ContentView: View {
             .padding(.trailing, 8)
             .padding(.bottom, 80)
         }
-        // Route info at bottom
+        // Route info / error at bottom
         .overlay(alignment: .bottom) {
-            if let route = mapVM.route {
-                RouteInfoView(
-                    route: route,
-                    avoidanceZones: crimeDataVM.avoidanceZones,
-                    onClear: { mapVM.clearRoute() }
-                )
-                .padding(.horizontal)
-                .padding(.bottom, 16)
+            VStack {
+                if let route = mapVM.route {
+                    RouteInfoView(
+                        route: route,
+                        avoidanceZones: crimeDataVM.avoidanceZones,
+                        onClear: { mapVM.clearRoute() }
+                    )
+                } else if let error = mapVM.routeError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .font(.subheadline)
+                        Spacer()
+                        Button("Dismiss", systemImage: "xmark.circle.fill") {
+                            mapVM.clearRoute()
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
             }
+            .padding(.horizontal)
+            .padding(.bottom, 16)
         }
         .onMapCameraChange(frequency: .onEnd) { context in
             let newSpan = context.region.span.latitudeDelta
