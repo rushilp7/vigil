@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import SwiftData
+import Combine
 
 struct ContentView: View {
     static let philadelphiaCenter = CLLocationCoordinate2D(latitude: 39.9526, longitude: -75.1652)
@@ -21,6 +22,11 @@ struct ContentView: View {
     @State private var showEmergency = false
     @State private var lastSpan: Double = 0.05
     @State private var showRouteSteps = false
+    @State private var showETAAlert = false
+    @State private var showContactSetup = false
+    @State private var showSettings = false
+    @State private var contactPhoneInput = ""
+    @AppStorage("emergencyContactPhone") private var emergencyContactPhone = ""
 
     var body: some View {
         Map(position: $cameraPosition) {
@@ -42,10 +48,12 @@ struct ContentView: View {
                     )
             }
 
-            // Rejected alternate routes (gray, dashed)
-            ForEach(Array(mapVM.alternateRoutes.enumerated()), id: \.offset) { _, altRoute in
-                MapPolyline(altRoute.polyline)
-                    .stroke(.gray.opacity(0.4), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
+            // Rejected alternate routes (gray, dashed) — hidden during navigation
+            if !mapVM.isNavigating {
+                ForEach(Array(mapVM.alternateRoutes.enumerated()), id: \.offset) { _, altRoute in
+                    MapPolyline(altRoute.polyline)
+                        .stroke(.gray.opacity(0.4), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
+                }
             }
 
             // Selected safest route (blue, solid)
@@ -77,18 +85,29 @@ struct ContentView: View {
             mapVM.sourceResults = []
             mapVM.destinationResults = []
         }
-        // Search bar at top
+        // Search bar + settings gear at top (hidden during navigation)
         .overlay(alignment: .top) {
-            VStack(spacing: 8) {
-                SearchBarView()
-                if crimeDataVM.isLoading {
-                    ProgressView("Loading crime data...")
-                        .padding(8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            if !mapVM.isNavigating {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(spacing: 8) {
+                        SearchBarView()
+                        if crimeDataVM.isLoading {
+                            ProgressView("Loading crime data...")
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gear")
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
                 }
+                .padding(.horizontal)
+                .padding(.top, 8)
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
         }
         // Legend at bottom-left
         .overlay(alignment: .bottomLeading) {
@@ -123,10 +142,19 @@ struct ContentView: View {
             .padding(.bottom, mapVM.route != nil ? 140 : 80)
             .animation(.easeInOut(duration: 0.2), value: mapVM.route != nil)
         }
-        // Route info / error at bottom
+        // Navigation banner or route info at bottom
         .overlay(alignment: .bottom) {
             VStack(spacing: 0) {
-                if let route = mapVM.route {
+                if mapVM.isNavigating, let step = mapVM.currentStep, let route = mapVM.route {
+                    NavigationBannerView(
+                        step: step,
+                        nextStep: mapVM.nextStep,
+                        stepIndex: mapVM.currentStepIndex,
+                        totalSteps: route.steps.count,
+                        onNext: { mapVM.advanceStep() },
+                        onStop: { mapVM.stopNavigation() }
+                    )
+                } else if let route = mapVM.route {
                     RouteInfoView(
                         route: route,
                         alternateCount: mapVM.alternateRoutes.count,
@@ -179,6 +207,10 @@ struct ContentView: View {
                 motionManager.resetShakeDetection()
             }
         }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            guard mapVM.isNavigating, mapVM.shouldShowETAAlert else { return }
+            showETAAlert = true
+        }
         .fullScreenCover(isPresented: $showFakeCall) {
             FakeCallView(onDismiss: { showFakeCall = false })
         }
@@ -189,6 +221,9 @@ struct ContentView: View {
             if let route = mapVM.route {
                 RouteStepsView(route: route)
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .alert("Error", isPresented: .init(
             get: { crimeDataVM.errorMessage != nil },
@@ -206,6 +241,31 @@ struct ContentView: View {
             Button("Dismiss", role: .cancel) {}
         } message: {
             Text(crimeDataVM.errorMessage ?? "")
+        }
+        .alert("Safety Check", isPresented: $showETAAlert) {
+            Button("Send Alert") {
+                if emergencyContactPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    contactPhoneInput = ""
+                    showContactSetup = true
+                } else {
+                    mapVM.sendSafetyText(to: emergencyContactPhone)
+                }
+            }
+            Button("I'm Fine", role: .cancel) {
+                mapVM.etaAlertShown = true
+            }
+        } message: {
+            Text("You've been walking longer than expected. Send a safety check to your emergency contact?")
+        }
+        .alert("Set Emergency Contact", isPresented: $showContactSetup) {
+            TextField("Phone number", text: $contactPhoneInput)
+            Button("Save & Send") {
+                emergencyContactPhone = contactPhoneInput
+                mapVM.sendSafetyText(to: emergencyContactPhone)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter a phone number to receive your safety alerts.")
         }
     }
 }

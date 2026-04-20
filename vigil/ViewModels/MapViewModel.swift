@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import CoreLocation
+import UIKit
 import Observation
 
 @Observable
@@ -16,6 +17,24 @@ class MapViewModel {
     var route: MKRoute?
     var allRoutes: [MKRoute] = []
     var routeError: String?
+
+    // In-app navigation state
+    var isNavigating = false
+    var currentStepIndex = 0
+    var navigationStartTime: Date?
+    var etaAlertShown = false
+
+    var currentStep: MKRoute.Step? {
+        guard let route, isNavigating,
+              currentStepIndex < route.steps.count else { return nil }
+        return route.steps[currentStepIndex]
+    }
+
+    var nextStep: MKRoute.Step? {
+        guard let route, isNavigating,
+              currentStepIndex + 1 < route.steps.count else { return nil }
+        return route.steps[currentStepIndex + 1]
+    }
 
     /// Routes that were considered but rejected (shown as gray dashed lines).
     var alternateRoutes: [MKRoute] {
@@ -131,13 +150,70 @@ class MapViewModel {
         return score
     }
 
-    /// Open the route in Apple Maps for turn-by-turn navigation.
+    /// Set source to user's current GPS location.
+    func useMyLocation(_ location: CLLocation) {
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: location.coordinate))
+        item.name = "My Location"
+        selectedSource = item
+        sourceQuery = "My Location"
+        sourceResults = []
+        activeField = nil
+    }
+
+    /// Begin in-app turn-by-turn navigation.
     func startNavigation() {
-        guard let source = selectedSource, let destination = selectedDestination else { return }
-        MKMapItem.openMaps(
-            with: [source, destination],
-            launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking]
-        )
+        guard route != nil else { return }
+        currentStepIndex = 0
+        isNavigating = true
+        navigationStartTime = Date()
+        etaAlertShown = false
+    }
+
+    func advanceStep() {
+        guard let route, currentStepIndex < route.steps.count - 1 else {
+            stopNavigation()
+            return
+        }
+        currentStepIndex += 1
+    }
+
+    /// Check if elapsed time exceeds 2x the expected travel time.
+    var shouldShowETAAlert: Bool {
+        guard isNavigating, !etaAlertShown,
+              let start = navigationStartTime,
+              let route else { return false }
+        let elapsed = Date().timeIntervalSince(start)
+        return elapsed > route.expectedTravelTime * 2
+    }
+
+    /// Format the expected arrival for display.
+    var expectedArrivalString: String {
+        guard let start = navigationStartTime, let route else { return "" }
+        let arrival = start.addingTimeInterval(route.expectedTravelTime)
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: arrival)
+    }
+
+    /// Send a safety text to an emergency contact.
+    func sendSafetyText(to phone: String) {
+        guard let destination = selectedDestination else { return }
+        let name = destination.name ?? "my destination"
+        let message = "Hey, I'm walking to \(name) using Vigil and my ETA has been exceeded. Please check on me."
+        let encoded = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let urlString = trimmed.isEmpty ? "sms:&body=\(encoded)" : "sms:\(trimmed)&body=\(encoded)"
+        if let url = URL(string: urlString) {
+            Task { @MainActor in UIApplication.shared.open(url) }
+        }
+        etaAlertShown = true
+    }
+
+    func stopNavigation() {
+        isNavigating = false
+        currentStepIndex = 0
+        navigationStartTime = nil
+        etaAlertShown = false
     }
 
     /// Auto-route if both endpoints are selected.
@@ -148,6 +224,7 @@ class MapViewModel {
     }
 
     func clearRoute() {
+        stopNavigation()
         route = nil
         allRoutes = []
         routeError = nil

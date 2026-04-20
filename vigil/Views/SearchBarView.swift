@@ -4,19 +4,36 @@ import MapKit
 struct SearchBarView: View {
     @Environment(MapViewModel.self) var mapVM
     @Environment(CrimeDataViewModel.self) var crimeDataVM
+    @Environment(LocationManager.self) var locationManager
 
     var body: some View {
         @Bindable var mapVM = mapVM
 
         VStack(spacing: 4) {
-            // Source field
-            searchField(
-                icon: "circle.fill",
-                iconColor: .blue,
-                placeholder: "Start",
-                text: $mapVM.sourceQuery,
-                field: .source
-            )
+            // Source field with My Location button
+            HStack(spacing: 4) {
+                searchField(
+                    icon: "circle.fill",
+                    iconColor: .blue,
+                    placeholder: "Start",
+                    text: $mapVM.sourceQuery,
+                    field: .source
+                )
+                if mapVM.selectedSource == nil, locationManager.userLocation != nil {
+                    Button {
+                        if let loc = locationManager.userLocation {
+                            mapVM.useMyLocation(loc)
+                            mapVM.tryCalculateRoute(avoiding: crimeDataVM.avoidanceZones)
+                        }
+                    } label: {
+                        Image(systemName: "location.fill")
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(.blue, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
 
             // Destination field
             searchField(
