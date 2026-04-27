@@ -23,7 +23,6 @@ struct SearchBarView: View {
                     Button {
                         if let loc = locationManager.userLocation {
                             mapVM.useMyLocation(loc)
-                            mapVM.tryCalculateRoute(avoiding: crimeDataVM.avoidanceZones)
                         }
                     } label: {
                         Image(systemName: "location.fill")
@@ -57,7 +56,6 @@ struct SearchBarView: View {
                                     } else {
                                         mapVM.selectDestination(item)
                                     }
-                                    mapVM.tryCalculateRoute(avoiding: crimeDataVM.avoidanceZones)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.name ?? "Unknown")

@@ -6,6 +6,33 @@ import Observation
 
 @Observable
 class MapViewModel {
+    struct ScoredRoute: Identifiable {
+        let id: Int
+        let route: MKRoute
+        let score: Double
+        /// 0 = safest, 1 = most dangerous (relative to this set of routes)
+        let normalizedScore: Double
+        let isRecommended: Bool
+
+        var formattedTime: String {
+            let minutes = Int(route.expectedTravelTime) / 60
+            guard minutes >= 60 else { return "\(minutes) min" }
+            return "\(minutes / 60)h \(minutes % 60)m"
+        }
+
+        var formattedDistance: String {
+            let miles = route.distance * 0.000621371
+            return String(format: "%.1f mi", miles)
+        }
+
+        var safetyLabel: String {
+            if normalizedScore < 0.05 { return "Safe" }
+            if normalizedScore < 0.5  { return "Low Risk" }
+            if normalizedScore < 0.8  { return "Med Risk" }
+            return "High Risk"
+        }
+    }
+
     var sourceQuery = ""
     var sourceResults: [MKMapItem] = []
     var selectedSource: MKMapItem?
@@ -16,6 +43,8 @@ class MapViewModel {
 
     var route: MKRoute?
     var allRoutes: [MKRoute] = []
+    var scoredRoutes: [ScoredRoute] = []
+    var pendingRouteSelection = false
     var routeError: String?
 
     // In-app navigation state
@@ -102,12 +131,24 @@ class MapViewModel {
             let response = try await directions.calculate()
             allRoutes = response.routes
 
-            if zones.isEmpty {
-                route = response.routes.first
-            } else {
-                // Score each route by avoidance zone overlap and pick the safest
-                route = response.routes.min(by: { crimeScore($0, zones: zones) < crimeScore($1, zones: zones) })
+            let scores = response.routes.map { crimeScore($0, zones: zones) }
+            let maxScore = scores.max() ?? 0
+            let minScore = scores.min() ?? 0
+
+            // Sort safest-first for display; id encodes display rank
+            let paired = zip(response.routes, scores).sorted { $0.1 < $1.1 }
+            scoredRoutes = paired.enumerated().map { rank, pair in
+                ScoredRoute(
+                    id: rank,
+                    route: pair.0,
+                    score: pair.1,
+                    normalizedScore: maxScore > 0 ? pair.1 / maxScore : 0,
+                    isRecommended: pair.1 == minScore
+                )
             }
+
+            route = nil
+            pendingRouteSelection = !scoredRoutes.isEmpty
         } catch {
             route = nil
             allRoutes = []
@@ -216,17 +257,54 @@ class MapViewModel {
         etaAlertShown = false
     }
 
+    /// 1-based safety rank of the currently selected route (1 = safest).
+    var selectedRouteRank: Int? {
+        guard let route else { return nil }
+        return scoredRoutes.first(where: { $0.route === route }).map { $0.id + 1 }
+    }
+
+    /// Midpoint between source and destination (used to center the crime data fetch).
+    var routeMidpoint: CLLocationCoordinate2D? {
+        guard let src = selectedSource?.placemark.coordinate,
+              let dst = selectedDestination?.placemark.coordinate else { return nil }
+        return CLLocationCoordinate2D(
+            latitude: (src.latitude + dst.latitude) / 2,
+            longitude: (src.longitude + dst.longitude) / 2
+        )
+    }
+
+    /// Radius from midpoint to either endpoint, with a 20% buffer.
+    var routeRadiusMeters: Double? {
+        guard let src = selectedSource?.placemark.coordinate,
+              let dst = selectedDestination?.placemark.coordinate else { return nil }
+        let srcLoc = CLLocation(latitude: src.latitude, longitude: src.longitude)
+        let dstLoc = CLLocation(latitude: dst.latitude, longitude: dst.longitude)
+        return (srcLoc.distance(from: dstLoc) / 2) * 1.2
+    }
+
     /// Auto-route if both endpoints are selected.
-    func tryCalculateRoute(avoiding zones: [AvoidanceZone]) {
+    func tryCalculateRoute(avoiding zones: [AvoidanceZone]) async {
         guard let src = selectedSource?.placemark.coordinate,
               let dst = selectedDestination?.placemark.coordinate else { return }
-        Task { await calculateSafestRoute(from: src, to: dst, avoiding: zones) }
+        await calculateSafestRoute(from: src, to: dst, avoiding: zones)
+    }
+
+    func selectRoute(_ scored: ScoredRoute) {
+        route = scored.route
+        pendingRouteSelection = false
+    }
+
+    func cancelRouteSelection() {
+        pendingRouteSelection = false
+        clearRoute()
     }
 
     func clearRoute() {
         stopNavigation()
         route = nil
         allRoutes = []
+        scoredRoutes = []
+        pendingRouteSelection = false
         routeError = nil
         selectedSource = nil
         selectedDestination = nil

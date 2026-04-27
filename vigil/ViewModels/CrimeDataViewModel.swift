@@ -15,14 +15,20 @@ class CrimeDataViewModel {
     @AppStorage("lastCrimeFetchDate") private var lastFetchTimestamp: Double = 0
 
     /// Load crime data: use cached SwiftData if fresh, otherwise fetch from API.
-    func loadCrimeData(near latitude: Double, longitude: Double, context: ModelContext) async {
+    func loadCrimeData(
+        near latitude: Double,
+        longitude: Double,
+        radiusMeters: Double = 2000,
+        forceRefresh: Bool = false,
+        context: ModelContext
+    ) async {
         // First, load whatever we have cached
         loadCachedIncidents(context: context)
 
         // Check if cache is stale (older than 24 hours) or empty
         let lastFetch = Date(timeIntervalSince1970: lastFetchTimestamp)
         let hoursElapsed = Date().timeIntervalSince(lastFetch) / 3600
-        let cacheIsStale = hoursElapsed > 24 || incidents.isEmpty
+        let cacheIsStale = forceRefresh || hoursElapsed > 24 || incidents.isEmpty
 
         guard cacheIsStale else {
             computeAvoidanceZones()
@@ -36,7 +42,8 @@ class CrimeDataViewModel {
         do {
             let dtos = try await CrimeAPIService.instance.fetchCrimeData(
                 latitude: latitude,
-                longitude: longitude
+                longitude: longitude,
+                radiusMeters: radiusMeters
             )
 
             // Clear old data and insert new

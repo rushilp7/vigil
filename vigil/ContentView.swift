@@ -28,6 +28,21 @@ struct ContentView: View {
     @State private var contactPhoneInput = ""
     @AppStorage("emergencyContactPhone") private var emergencyContactPhone = ""
 
+    private func triggerCrimeAndRoute() {
+        guard let mid = mapVM.routeMidpoint,
+              let radius = mapVM.routeRadiusMeters else { return }
+        Task {
+            await crimeDataVM.loadCrimeData(
+                near: mid.latitude,
+                longitude: mid.longitude,
+                radiusMeters: radius,
+                forceRefresh: true,
+                context: modelContext
+            )
+            await mapVM.tryCalculateRoute(avoiding: crimeDataVM.avoidanceZones)
+        }
+    }
+
     var body: some View {
         Map(position: $cameraPosition) {
             UserAnnotation()
@@ -48,8 +63,8 @@ struct ContentView: View {
                     )
             }
 
-            // Rejected alternate routes (gray, dashed) — hidden during navigation
-            if !mapVM.isNavigating {
+            // Rejected alternate routes (gray, dashed) — hidden during navigation or selection
+            if !mapVM.isNavigating && !mapVM.pendingRouteSelection {
                 ForEach(Array(mapVM.alternateRoutes.enumerated()), id: \.offset) { _, altRoute in
                     MapPolyline(altRoute.polyline)
                         .stroke(.gray.opacity(0.4), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
@@ -159,6 +174,7 @@ struct ContentView: View {
                         route: route,
                         alternateCount: mapVM.alternateRoutes.count,
                         avoidanceZones: crimeDataVM.avoidanceZones,
+                        routeRank: mapVM.selectedRouteRank ?? 1,
                         onGo: { mapVM.startNavigation() },
                         onSteps: { showRouteSteps = true },
                         onClear: { mapVM.clearRoute() }
@@ -193,14 +209,9 @@ struct ContentView: View {
         .onAppear {
             locationManager.requestPermission()
             motionManager.startMonitoring()
-            Task {
-                await crimeDataVM.loadCrimeData(
-                    near: ContentView.philadelphiaCenter.latitude,
-                    longitude: ContentView.philadelphiaCenter.longitude,
-                    context: modelContext
-                )
-            }
         }
+        .onChange(of: mapVM.selectedSource) { triggerCrimeAndRoute() }
+        .onChange(of: mapVM.selectedDestination) { triggerCrimeAndRoute() }
         .onChange(of: motionManager.isShakeDetected) { _, detected in
             if detected {
                 showEmergency = true
@@ -222,6 +233,20 @@ struct ContentView: View {
                 RouteStepsView(route: route)
             }
         }
+        .sheet(
+            isPresented: Binding(
+                get: { mapVM.pendingRouteSelection },
+                set: { mapVM.pendingRouteSelection = $0 }
+            ),
+            onDismiss: {
+                // Only cancel (clear state) if the user dismissed without selecting a route
+                if mapVM.route == nil {
+                    mapVM.cancelRouteSelection()
+                }
+            }
+        ) {
+            RouteSelectionView()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
@@ -229,15 +254,7 @@ struct ContentView: View {
             get: { crimeDataVM.errorMessage != nil },
             set: { if !$0 { crimeDataVM.errorMessage = nil } }
         )) {
-            Button("Retry") {
-                Task {
-                    await crimeDataVM.loadCrimeData(
-                        near: ContentView.philadelphiaCenter.latitude,
-                        longitude: ContentView.philadelphiaCenter.longitude,
-                        context: modelContext
-                    )
-                }
-            }
+            Button("Retry") { triggerCrimeAndRoute() }
             Button("Dismiss", role: .cancel) {}
         } message: {
             Text(crimeDataVM.errorMessage ?? "")

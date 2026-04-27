@@ -5,6 +5,7 @@ struct RouteInfoView: View {
     let route: MKRoute
     let alternateCount: Int
     let avoidanceZones: [AvoidanceZone]
+    let routeRank: Int
     let onGo: () -> Void
     let onSteps: () -> Void
     let onClear: () -> Void
@@ -31,7 +32,7 @@ struct RouteInfoView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text("Safest Route")
+                        Text("\(ordinal(routeRank)) Safest Route")
                             .font(.headline)
                         if alternateCount > 0 {
                             Text("of \(alternateCount + 1)")
@@ -87,6 +88,21 @@ struct RouteInfoView: View {
         }
         .padding()
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func ordinal(_ n: Int) -> String {
+        let suffix: String
+        switch n % 100 {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch n % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(n)\(suffix)"
     }
 
     private var formattedDistance: String {
