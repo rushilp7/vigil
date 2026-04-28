@@ -52,11 +52,11 @@ private struct RouteRowView: View {
                     }
                 }
 
-                HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
                     Label(scored.formattedTime, systemImage: "clock")
                     Label(scored.formattedDistance, systemImage: "arrow.left.and.right")
                     if scored.nearbyBusinessCount > 0 {
-                        Label("\(scored.nearbyBusinessCount)", systemImage: "building.2")
+                        Label("\(scored.nearbyBusinessCount) businesses", systemImage: "building.2")
                     }
                 }
                 .font(.subheadline)

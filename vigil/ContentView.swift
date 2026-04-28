@@ -282,12 +282,11 @@ struct ContentView: View {
         Map(position: $cameraPosition) {
             mapContent
         }
-        .annotationTitles(.hidden)
         .mapControls {
             MapCompass()
             MapScaleView()
         }
-        .mapStyle(.standard(pointsOfInterest: .including([.restaurant, .store, .hospital, .police])))
+        .mapStyle(.standard)
         .onTapGesture {
             // Dismiss search results when tapping the map
             mapVM.activeField = nil
@@ -319,6 +318,14 @@ struct ContentView: View {
             }
             .onChange(of: mapVM.selectedSource) { triggerCrimeAndRoute() }
             .onChange(of: mapVM.selectedDestination) { triggerCrimeAndRoute() }
+            .onChange(of: mapVM.route) { _, newRoute in
+                guard newRoute != nil,
+                      let src = mapVM.selectedSource?.placemark.coordinate else { return }
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: src,
+                    span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
+                ))
+            }
             .onChange(of: motionManager.isShakeDetected) { _, detected in
                 if detected {
                     showEmergency = true

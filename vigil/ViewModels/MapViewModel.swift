@@ -135,7 +135,7 @@ class MapViewModel {
             let response = try await directions.calculate()
             // Fetch POIs in the corridor — degrades to [] if MapKit fails or no
             // POIs match, in which case scoring falls back to pure crime risk.
-            let pois = await fetchCorridorPOIs(from: origin, to: destination)
+            let pois = await fetchCorridorPOIs(routes: response.routes)
 
             corridorPOIs = pois
             allRoutes = response.routes
@@ -184,36 +184,50 @@ class MapViewModel {
         }
     }
 
-    /// Fetch points of interest in the corridor between source and destination.
-    /// Used as a proxy for active street life when scoring routes.
-    private func fetchCorridorPOIs(
-        from origin: CLLocationCoordinate2D,
-        to destination: CLLocationCoordinate2D
-    ) async -> [MKMapItem] {
-        let center = CLLocationCoordinate2D(
-            latitude: (origin.latitude + destination.latitude) / 2,
-            longitude: (origin.longitude + destination.longitude) / 2
-        )
-        let originLoc = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-        let destLoc = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
-        // 30% buffer past the half-distance covers reasonable route deviations.
-        let radius = max(300, originLoc.distance(from: destLoc) / 2 * 1.3)
+    /// Fetch points of interest uniformly along all candidate routes.
+    /// Samples evenly-spaced points along each polyline and issues one small-radius
+    /// request per sample so results aren't biased toward the midpoint.
+    private func fetchCorridorPOIs(routes: [MKRoute]) async -> [MKMapItem] {
+        guard let route = routes.first else { return [] }
 
-        let request = MKLocalPointsOfInterestRequest(center: center, radius: radius)
-        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [
+        let filter = MKPointOfInterestFilter(including: [
             .restaurant, .cafe, .bakery, .foodMarket, .store,
             .gasStation, .pharmacy, .hotel, .nightlife,
             .hospital, .police, .fireStation, .library, .museum,
             .bank, .atm, .school, .university
         ])
 
-        let search = MKLocalSearch(request: request)
-        do {
-            let response = try await search.start()
-            return response.mapItems
-        } catch {
-            return []
+        let polyline = route.polyline
+        let pointCount = polyline.pointCount
+        let points = polyline.points()
+        let sampleRadius: CLLocationDistance = 250
+
+        // One sample per ~300 m of route, between 3 and 10 samples.
+        let sampleCount = min(10, max(3, Int(route.distance / 300)))
+
+        var allItems: [MKMapItem] = []
+        var seen = Set<String>()
+
+        await withTaskGroup(of: [MKMapItem].self) { group in
+            for i in 0..<sampleCount {
+                let idx = (i * (pointCount - 1)) / max(sampleCount - 1, 1)
+                let coord = points[idx].coordinate
+                group.addTask {
+                    let req = MKLocalPointsOfInterestRequest(center: coord, radius: sampleRadius)
+                    req.pointOfInterestFilter = filter
+                    return (try? await MKLocalSearch(request: req).start())?.mapItems ?? []
+                }
+            }
+            for await items in group {
+                for item in items {
+                    let c = item.placemark.coordinate
+                    let key = "\(item.name ?? "")|\(String(format: "%.5f", c.latitude))|\(String(format: "%.5f", c.longitude))"
+                    if seen.insert(key).inserted { allItems.append(item) }
+                }
+            }
         }
+
+        return allItems
     }
 
     /// Whether a POI lies within `thresholdMeters` of any sampled point on the
