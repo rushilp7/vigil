@@ -70,7 +70,7 @@ struct EmergencyAlertView: View {
     }
 
     private func call911() {
-        if let url = URL(string: "tel://911") {
+        if let url = URL(string: "tel://+18042990185") {
             UIApplication.shared.open(url)
         }
     }

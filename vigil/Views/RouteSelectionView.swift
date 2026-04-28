@@ -55,6 +55,9 @@ private struct RouteRowView: View {
                 HStack(spacing: 14) {
                     Label(scored.formattedTime, systemImage: "clock")
                     Label(scored.formattedDistance, systemImage: "arrow.left.and.right")
+                    if scored.nearbyBusinessCount > 0 {
+                        Label("\(scored.nearbyBusinessCount)", systemImage: "building.2")
+                    }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

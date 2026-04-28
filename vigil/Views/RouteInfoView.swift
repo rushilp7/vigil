@@ -6,6 +6,7 @@ struct RouteInfoView: View {
     let alternateCount: Int
     let avoidanceZones: [AvoidanceZone]
     let routeRank: Int
+    let nearbyBusinessCount: Int
     let onGo: () -> Void
     let onSteps: () -> Void
     let onClear: () -> Void
@@ -66,7 +67,7 @@ struct RouteInfoView: View {
             }
 
             // Warning + steps row
-            HStack {
+            HStack(spacing: 10) {
                 if !routeWarnings.isEmpty {
                     let highSeverity = routeWarnings.contains { $0.severity == .high }
                     HStack(spacing: 4) {
@@ -77,6 +78,15 @@ struct RouteInfoView: View {
                             : "Passes through elevated-crime area")
                             .font(.caption)
                             .foregroundStyle(highSeverity ? .red : .orange)
+                    }
+                }
+                if nearbyBusinessCount >= 5 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "building.2.fill")
+                            .foregroundStyle(.green)
+                        Text("\(nearbyBusinessCount) nearby")
+                            .font(.caption)
+                            .foregroundStyle(.green)
                     }
                 }
                 Spacer()

@@ -13,6 +13,9 @@ class MapViewModel {
         /// 0 = safest, 1 = most dangerous (relative to this set of routes)
         let normalizedScore: Double
         let isRecommended: Bool
+        /// POIs (restaurants, stores, etc.) within ~75m of this route's polyline.
+        /// Acts as a proxy for active street life ("eyes on the street").
+        let nearbyBusinessCount: Int
 
         var formattedTime: String {
             let minutes = Int(route.expectedTravelTime) / 60
@@ -44,6 +47,7 @@ class MapViewModel {
     var route: MKRoute?
     var allRoutes: [MKRoute] = []
     var scoredRoutes: [ScoredRoute] = []
+    var corridorPOIs: [MKMapItem] = []
     var pendingRouteSelection = false
     var routeError: String?
 
@@ -129,21 +133,37 @@ class MapViewModel {
         let directions = MKDirections(request: request)
         do {
             let response = try await directions.calculate()
+            // Fetch POIs in the corridor — degrades to [] if MapKit fails or no
+            // POIs match, in which case scoring falls back to pure crime risk.
+            let pois = await fetchCorridorPOIs(from: origin, to: destination)
+
+            corridorPOIs = pois
             allRoutes = response.routes
 
-            let scores = response.routes.map { crimeScore($0, zones: zones) }
-            let maxScore = scores.max() ?? 0
-            let minScore = scores.min() ?? 0
+            // Combined score = crime risk - business density bonus (capped so
+            // active streets can't fully cancel out a high-crime route).
+            let combined: [(route: MKRoute, score: Double, businessCount: Int)] =
+                response.routes.map { route in
+                    let crime = crimeScore(route, zones: zones)
+                    let count = countPOIsNear(route, in: pois, thresholdMeters: 75)
+                    let bonus = Double(min(count, 30)) * 0.5
+                    return (route, crime - bonus, count)
+                }
+
+            let maxScore = combined.map(\.score).max() ?? 0
+            let minScore = combined.map(\.score).min() ?? 0
+            let range = max(maxScore - minScore, 1)
 
             // Sort safest-first for display; id encodes display rank
-            let paired = zip(response.routes, scores).sorted { $0.1 < $1.1 }
-            scoredRoutes = paired.enumerated().map { rank, pair in
+            let sorted = combined.sorted { $0.score < $1.score }
+            scoredRoutes = sorted.enumerated().map { rank, item in
                 ScoredRoute(
                     id: rank,
-                    route: pair.0,
-                    score: pair.1,
-                    normalizedScore: maxScore > 0 ? pair.1 / maxScore : 0,
-                    isRecommended: pair.1 == minScore
+                    route: item.route,
+                    score: item.score,
+                    normalizedScore: (item.score - minScore) / range,
+                    isRecommended: item.score == minScore,
+                    nearbyBusinessCount: item.businessCount
                 )
             }
 
@@ -152,6 +172,8 @@ class MapViewModel {
         } catch {
             route = nil
             allRoutes = []
+            scoredRoutes = []
+            corridorPOIs = []
             let mkError = error as NSError
             if mkError.domain == "MKErrorDomain",
                let reason = mkError.userInfo["NSLocalizedFailureReason"] as? String {
@@ -160,6 +182,84 @@ class MapViewModel {
                 routeError = "Could not calculate walking route."
             }
         }
+    }
+
+    /// Fetch points of interest in the corridor between source and destination.
+    /// Used as a proxy for active street life when scoring routes.
+    private func fetchCorridorPOIs(
+        from origin: CLLocationCoordinate2D,
+        to destination: CLLocationCoordinate2D
+    ) async -> [MKMapItem] {
+        let center = CLLocationCoordinate2D(
+            latitude: (origin.latitude + destination.latitude) / 2,
+            longitude: (origin.longitude + destination.longitude) / 2
+        )
+        let originLoc = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+        let destLoc = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
+        // 30% buffer past the half-distance covers reasonable route deviations.
+        let radius = max(300, originLoc.distance(from: destLoc) / 2 * 1.3)
+
+        let request = MKLocalPointsOfInterestRequest(center: center, radius: radius)
+        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [
+            .restaurant, .cafe, .bakery, .foodMarket, .store,
+            .gasStation, .pharmacy, .hotel, .nightlife,
+            .hospital, .police, .fireStation, .library, .museum,
+            .bank, .atm, .school, .university
+        ])
+
+        let search = MKLocalSearch(request: request)
+        do {
+            let response = try await search.start()
+            return response.mapItems
+        } catch {
+            return []
+        }
+    }
+
+    /// Whether a POI lies within `thresholdMeters` of any sampled point on the
+    /// route polyline.
+    private func isPOI(
+        _ poi: MKMapItem,
+        nearRoute route: MKRoute,
+        thresholdMeters: Double
+    ) -> Bool {
+        let polyline = route.polyline
+        let points = polyline.points()
+        let pointCount = polyline.pointCount
+        let step = max(1, pointCount / 100)
+        let poiLoc = CLLocation(
+            latitude: poi.placemark.coordinate.latitude,
+            longitude: poi.placemark.coordinate.longitude
+        )
+        for i in stride(from: 0, to: pointCount, by: step) {
+            let coord = points[i].coordinate
+            let routeLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            if routeLoc.distance(from: poiLoc) <= thresholdMeters {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Count POIs near a route polyline.
+    private func countPOIsNear(
+        _ route: MKRoute,
+        in pois: [MKMapItem],
+        thresholdMeters: Double
+    ) -> Int {
+        guard !pois.isEmpty else { return 0 }
+        return pois.reduce(into: 0) { count, poi in
+            if isPOI(poi, nearRoute: route, thresholdMeters: thresholdMeters) {
+                count += 1
+            }
+        }
+    }
+
+    /// POIs along the currently selected route — used to render storefront
+    /// markers on the map.
+    var routeBusinesses: [MKMapItem] {
+        guard let route, !corridorPOIs.isEmpty else { return [] }
+        return corridorPOIs.filter { isPOI($0, nearRoute: route, thresholdMeters: 75) }
     }
 
     /// Score a route by how much it overlaps with avoidance zones.
@@ -263,6 +363,12 @@ class MapViewModel {
         return scoredRoutes.first(where: { $0.route === route }).map { $0.id + 1 }
     }
 
+    /// The ScoredRoute entry matching the currently selected route (for UI display).
+    var selectedScoredRoute: ScoredRoute? {
+        guard let route else { return nil }
+        return scoredRoutes.first(where: { $0.route === route })
+    }
+
     /// Midpoint between source and destination (used to center the crime data fetch).
     var routeMidpoint: CLLocationCoordinate2D? {
         guard let src = selectedSource?.placemark.coordinate,
@@ -294,9 +400,23 @@ class MapViewModel {
         pendingRouteSelection = false
     }
 
+    /// Re-open the route picker with the existing scored routes — used when the
+    /// user wants to switch routes without re-entering source/destination.
+    func showRouteSelector() {
+        guard !scoredRoutes.isEmpty else { return }
+        pendingRouteSelection = true
+    }
+
     func cancelRouteSelection() {
         pendingRouteSelection = false
-        clearRoute()
+        // Only clear everything if there was no previous selection to fall
+        // back to (i.e. the user dismissed the initial picker without choosing
+        // a route). If they had already picked a route and then re-opened the
+        // picker via the X button, dismissing without re-selecting should
+        // simply leave their previous route intact.
+        if route == nil {
+            clearRoute()
+        }
     }
 
     func clearRoute() {
@@ -304,6 +424,7 @@ class MapViewModel {
         route = nil
         allRoutes = []
         scoredRoutes = []
+        corridorPOIs = []
         pendingRouteSelection = false
         routeError = nil
         selectedSource = nil
